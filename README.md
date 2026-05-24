@@ -47,8 +47,10 @@ extra workflow scope.
 Required environment for publishing:
 
 - `PUBLISH_ENABLED=true`
-- `PUBLISH_REMOTE_URL=git@github.com:pbardov/jm-directory-nodes-monitor.git`
+- `PUBLISH_REMOTE_URL=git@github.com:<owner>/<repo>.git`
 - `PUBLICATION_BRANCH=pages`
+
+Use any Git remote you control for publication (GitHub, Gitea, and so on).
 
 The Docker image contains `git`, `ssh`, and `gh`. The Compose file mounts the
 host paths configured by `SSH_DIR` and `GH_CONFIG_DIR` read-only so the
