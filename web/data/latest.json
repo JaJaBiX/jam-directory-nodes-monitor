@@ -5,11 +5,18 @@
   "summary": {
     "fidelity_bonds_total": 0,
     "makers_total": 0,
+    "makers_unique_total": 0,
     "max_node": null,
     "max_node_offers": 0,
     "nodes_failed": 0,
     "nodes_ok": 0,
     "nodes_total": 0,
+    "offers_total": 0,
+    "offers_unique_total": 0
+  },
+  "orderbook": {
+    "makers_total": 0,
+    "offers": [],
     "offers_total": 0
   },
   "tor_socks": "127.0.0.1:9050"

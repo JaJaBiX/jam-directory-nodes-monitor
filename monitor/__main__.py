@@ -31,6 +31,50 @@ def build_summary(results: list[dict]) -> dict:
     }
 
 
+def build_aggregated_orderbook(results: list[dict]) -> dict:
+    deduped: dict[tuple[str, str, str], dict] = {}
+    for node in results:
+        if not node.get("ok"):
+            continue
+        for offer in node.get("orderbook_offers", []):
+            counterparty = str(offer.get("counterparty", "")).strip()
+            oid = str(offer.get("oid", "")).strip()
+            ordertype = str(offer.get("ordertype", "")).strip()
+            if not counterparty or not oid or not ordertype:
+                continue
+            key = (counterparty, oid, ordertype)
+            if key in deduped:
+                continue
+            deduped[key] = {
+                "counterparty": counterparty,
+                "oid": oid,
+                "ordertype": ordertype,
+                "minsize": offer.get("minsize"),
+                "maxsize": offer.get("maxsize"),
+                "txfee": offer.get("txfee"),
+                "cjfee": offer.get("cjfee"),
+            }
+
+    offers = sorted(
+        deduped.values(),
+        key=lambda item: (
+            item["counterparty"],
+            item["oid"],
+            item["ordertype"],
+        ),
+    )
+    makers = {offer["counterparty"] for offer in offers}
+    return {
+        "offers": offers,
+        "offers_total": len(offers),
+        "makers_total": len(makers),
+    }
+
+
+def strip_node_orderbook(results: list[dict]) -> list[dict]:
+    return [{k: v for k, v in node.items() if k != "orderbook_offers"} for node in results]
+
+
 def run_probe(settings: Settings) -> dict:
     checked_at = utc_now()
     results: list[dict] = []
@@ -50,12 +94,17 @@ def run_probe(settings: Settings) -> dict:
         for future in as_completed(futures):
             results.append(future.result())
     results.sort(key=lambda item: item["node"])
+    orderbook = build_aggregated_orderbook(results)
+    summary = build_summary(results)
+    summary["offers_unique_total"] = orderbook["offers_total"]
+    summary["makers_unique_total"] = orderbook["makers_total"]
     latest = {
         "checked_at": checked_at,
         "network": settings.jm_network,
         "tor_socks": f"{settings.tor_socks_host}:{settings.tor_socks_port}",
-        "summary": build_summary(results),
-        "nodes": results,
+        "summary": summary,
+        "orderbook": orderbook,
+        "nodes": strip_node_orderbook(results),
     }
     write_outputs(
         settings.web_dir,

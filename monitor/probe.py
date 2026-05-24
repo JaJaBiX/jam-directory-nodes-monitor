@@ -183,6 +183,7 @@ def probe_directory_node(
         "ok": False,
         "latency_ms": None,
         "offers": 0,
+        "orderbook_offers": [],
         "fidelity_bonds": 0,
         "makers": 0,
         "messages": 0,
@@ -255,6 +256,7 @@ def probe_directory_node(
         result.update(
             ok=True,
             offers=len(offers_by_key),
+            orderbook_offers=[offers_by_key[key] for key in sorted(offers_by_key)],
             fidelity_bonds=fidelity_bonds,
             makers=len(makers),
         )

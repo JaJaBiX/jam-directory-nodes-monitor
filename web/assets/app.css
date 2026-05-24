@@ -71,7 +71,8 @@ h2 {
 }
 
 button,
-select {
+select,
+input {
   height: 36px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -87,6 +88,41 @@ button {
 
 select {
   padding: 0 32px 0 10px;
+}
+
+.fee-controls {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(160px, 220px) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.fee-controls label {
+  display: grid;
+  gap: 6px;
+}
+
+.fee-controls span {
+  color: var(--muted);
+  font-size: 0.83rem;
+  text-transform: uppercase;
+}
+
+.fee-controls input {
+  width: 100%;
+  padding: 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fee-status {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.fee-fast {
+  font-weight: 700;
+  color: var(--accent-2);
 }
 
 .metrics {
@@ -226,6 +262,10 @@ td {
 
   canvas {
     aspect-ratio: 16 / 10;
+  }
+
+  .fee-controls {
+    grid-template-columns: 1fr;
   }
 }
 

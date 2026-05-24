@@ -1,5 +1,7 @@
 const latestUrl = "data/latest.json";
 const historyUrl = "data/history.json";
+const ABS_OFFER_TYPES = new Set(["absoffer", "swabsoffer", "sw0absoffer"]);
+const REL_OFFER_TYPES = new Set(["reloffer", "swreloffer", "sw0reloffer"]);
 
 const state = {
   latest: null,
@@ -25,6 +27,164 @@ function formatDate(value) {
     return "No checks yet";
   }
   return new Date(value).toLocaleString();
+}
+
+function formatPercent(value, digits = 4) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  return Number(value).toFixed(digits);
+}
+
+function formatFraction(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  return Number(value).toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function parseBtcToSats(input) {
+  if (input === null || input === undefined) {
+    return null;
+  }
+  const normalized = String(input).trim().replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    return null;
+  }
+  const [whole, fraction = ""] = normalized.split(".");
+  const sats =
+    Number(whole) * 100000000 + Number((fraction + "00000000").slice(0, 8));
+  if (!Number.isFinite(sats) || sats <= 0 || !Number.isSafeInteger(sats)) {
+    return null;
+  }
+  return sats;
+}
+
+function parsePositiveInteger(input) {
+  const parsed = Number(input);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return null;
+  }
+  return parsed;
+}
+
+function parseOfferNumber(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function calculateOfferFeeSats(offer, amountSats) {
+  const ordertype = String(offer?.ordertype || "");
+  const txfee = parseOfferNumber(offer?.txfee);
+  if (txfee === null) {
+    return null;
+  }
+  if (ABS_OFFER_TYPES.has(ordertype)) {
+    const cjfeeAbs = parseOfferNumber(offer?.cjfee);
+    if (cjfeeAbs === null) {
+      return null;
+    }
+    return Math.round(cjfeeAbs) - Math.round(txfee);
+  }
+  if (REL_OFFER_TYPES.has(ordertype)) {
+    const cjfeeRel = parseOfferNumber(offer?.cjfee);
+    if (cjfeeRel === null) {
+      return null;
+    }
+    return Math.round(cjfeeRel * amountSats) - Math.round(txfee);
+  }
+  return null;
+}
+
+function buildBestOffersByMaker(offers, amountSats) {
+  const bestByMaker = new Map();
+  for (const offer of offers) {
+    const minsize = parseOfferNumber(offer?.minsize);
+    const maxsize = parseOfferNumber(offer?.maxsize);
+    if (minsize === null || maxsize === null) {
+      continue;
+    }
+    if (!(minsize < amountSats && maxsize > amountSats)) {
+      continue;
+    }
+    const counterparty = String(offer?.counterparty || "").trim();
+    if (!counterparty) {
+      continue;
+    }
+    const fee = calculateOfferFeeSats(offer, amountSats);
+    if (fee === null) {
+      continue;
+    }
+    const current = bestByMaker.get(counterparty);
+    if (!current || fee < current.fee) {
+      bestByMaker.set(counterparty, {
+        counterparty,
+        fee,
+        ordertype: String(offer?.ordertype || ""),
+      });
+    }
+  }
+  return Array.from(bestByMaker.values()).sort((left, right) => {
+    if (left.fee !== right.fee) {
+      return left.fee - right.fee;
+    }
+    return left.counterparty.localeCompare(right.counterparty);
+  });
+}
+
+function getFeeQuantile(bestOffers, quantile) {
+  if (bestOffers.length === 0) {
+    return null;
+  }
+  const index = Math.floor((bestOffers.length - 1) * quantile);
+  return bestOffers[index].fee;
+}
+
+function getThresholdFee(bestOffers, targetPool) {
+  if (bestOffers.length === 0) {
+    return null;
+  }
+  const index = Math.min(bestOffers.length - 1, Math.max(0, targetPool - 1));
+  return bestOffers[index].fee;
+}
+
+function calculateFeeProfiles(bestOffers, amountSats, counterparties) {
+  const profiles = [
+    {
+      key: "economy",
+      label: "Economy",
+      targetPool: Math.max(counterparties * 6, 24),
+    },
+    {
+      key: "balanced",
+      label: "Balanced",
+      targetPool: Math.max(counterparties * 20, 80),
+    },
+    {
+      key: "fast",
+      label: "Fast",
+      targetPool: Math.max(counterparties * 40, 200),
+    },
+  ];
+  return profiles.map((profile) => {
+    const maxAbsSat = getThresholdFee(bestOffers, profile.targetPool);
+    const maxRelFraction = maxAbsSat === null ? null : maxAbsSat / amountSats;
+    const maxRelPercent = maxRelFraction === null ? null : maxRelFraction * 100;
+    const eligibleMakers =
+      maxAbsSat === null
+        ? 0
+        : bestOffers.filter((offer) => offer.fee <= maxAbsSat).length;
+    return {
+      ...profile,
+      maxAbsSat,
+      maxRelFraction,
+      maxRelPercent,
+      eligibleMakers,
+    };
+  });
 }
 
 function groupHistory(rows, metric) {
@@ -138,7 +298,7 @@ function renderLatest(latest) {
     summary.max_node_offers,
   );
   document.getElementById("makers-total").textContent = formatNumber(
-    summary.makers_total,
+    summary.makers_unique_total ?? summary.makers_total,
   );
   document.getElementById("bonds-total").textContent = formatNumber(
     summary.fidelity_bonds_total,
@@ -173,8 +333,78 @@ function renderLatest(latest) {
   );
 }
 
+function renderFeeCalculator() {
+  const orderbook = state.latest?.orderbook;
+  const source = document.getElementById("fee-source");
+  const status = document.getElementById("fee-status");
+  const tbody = document.getElementById("fee-table");
+
+  if (!orderbook || !Array.isArray(orderbook.offers)) {
+    source.textContent = "No orderbook data in latest snapshot";
+    status.textContent = "Calculator requires orderbook offers in latest.json.";
+    tbody.innerHTML = '<tr><td colspan="6">No orderbook offers available.</td></tr>';
+    return;
+  }
+
+  source.textContent = `${formatNumber(orderbook.offers_total)} offers from ${formatNumber(orderbook.makers_total)} makers`;
+
+  const amountSats = parseBtcToSats(document.getElementById("fee-amount").value);
+  const counterparties = parsePositiveInteger(
+    document.getElementById("fee-counterparties").value,
+  );
+  if (amountSats === null) {
+    status.textContent = "Enter a positive BTC amount, for example 0.00060150.";
+    tbody.innerHTML = '<tr><td colspan="6">Invalid amount format.</td></tr>';
+    return;
+  }
+  if (counterparties === null) {
+    status.textContent = "Counterparties must be an integer greater than zero.";
+    tbody.innerHTML = '<tr><td colspan="6">Invalid counterparties value.</td></tr>';
+    return;
+  }
+
+  const bestOffers = buildBestOffersByMaker(orderbook.offers, amountSats);
+  if (bestOffers.length === 0) {
+    status.textContent =
+      "No eligible offers for this amount in the latest orderbook snapshot.";
+    tbody.innerHTML = '<tr><td colspan="6">No eligible makers for this amount.</td></tr>';
+    return;
+  }
+  if (bestOffers.length < counterparties) {
+    status.textContent = `Only ${formatNumber(bestOffers.length)} eligible makers for this amount, below requested ${formatNumber(counterparties)}.`;
+  } else {
+    status.textContent =
+      `Eligible makers: ${formatNumber(bestOffers.length)}. ` +
+      `P50=${formatNumber(getFeeQuantile(bestOffers, 0.5))} sat, ` +
+      `P75=${formatNumber(getFeeQuantile(bestOffers, 0.75))} sat, ` +
+      `P90=${formatNumber(getFeeQuantile(bestOffers, 0.9))} sat per maker.`;
+  }
+
+  const profiles = calculateFeeProfiles(bestOffers, amountSats, counterparties);
+  tbody.replaceChildren(
+    ...profiles.map((profile) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td></td>
+        <td>${formatNumber(profile.maxAbsSat)}</td>
+        <td>${formatPercent(profile.maxRelPercent, 4)}</td>
+        <td>${formatFraction(profile.maxRelFraction)}</td>
+        <td>${formatNumber(profile.eligibleMakers)}</td>
+        <td>${formatNumber(profile.targetPool)}</td>
+      `;
+      const label = row.querySelector("td");
+      label.textContent = profile.label;
+      if (profile.key === "fast") {
+        label.classList.add("fee-fast");
+      }
+      return row;
+    }),
+  );
+}
+
 function render() {
   renderLatest(state.latest);
+  renderFeeCalculator();
   const metric = document.getElementById("chart-mode").value;
   drawChart(groupHistory(state.history, metric), metric);
 }
@@ -199,6 +429,11 @@ async function loadData() {
 
 document.getElementById("refresh-button").addEventListener("click", loadData);
 document.getElementById("chart-mode").addEventListener("change", render);
+document.getElementById("fee-calc").addEventListener("click", renderFeeCalculator);
+document.getElementById("fee-amount").addEventListener("change", renderFeeCalculator);
+document
+  .getElementById("fee-counterparties")
+  .addEventListener("change", renderFeeCalculator);
 window.addEventListener("resize", render);
 loadData().catch((error) => {
   document.getElementById("subtitle").textContent = `Load failed: ${error.message}`;

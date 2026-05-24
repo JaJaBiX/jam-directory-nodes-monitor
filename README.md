@@ -57,6 +57,10 @@ container can use existing GitHub authentication.
 ## JSON Outputs
 
 - `web/data/latest.json` contains the latest run, per-node results, and summary.
+- `web/data/latest.json` also includes an aggregated deduplicated orderbook
+  (`orderbook.offers`) merged from the latest successful node probes. The web
+  UI uses this list to run a fee-limit calculator for user-entered transaction
+  amounts.
 - `web/data/history.json` contains bounded historical samples for charting.
 - `data/probes.jsonl` contains append-only runtime logs inside the container
   data volume.
