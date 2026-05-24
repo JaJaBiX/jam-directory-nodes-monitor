@@ -16,18 +16,28 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def build_summary(results: list[dict]) -> dict:
+def build_summary(results: list[dict], orderbook: dict) -> dict:
     ok_results = [item for item in results if item["ok"]]
     max_offer_node = max(ok_results, key=lambda item: int(item["offers"]), default=None)
+    offers_reported_total = sum(int(item["offers"]) for item in results)
+    makers_reported_total = sum(int(item["makers"]) for item in results)
+    offers_unique_total = int(orderbook.get("offers_total", 0))
+    makers_unique_total = int(orderbook.get("makers_total", 0))
     return {
         "nodes_total": len(results),
         "nodes_ok": len(ok_results),
         "nodes_failed": len(results) - len(ok_results),
-        "offers_total": sum(int(item["offers"]) for item in results),
+        # Canonical public metric: unique offers deduplicated across DN responses.
+        "offers_total": offers_unique_total,
+        "offers_unique_total": offers_unique_total,
+        # Reported sum before deduplication is kept for diagnostics.
+        "offers_reported_total": offers_reported_total,
         "max_node_offers": int(max_offer_node["offers"]) if max_offer_node else 0,
         "max_node": max_offer_node["node"] if max_offer_node else None,
         "fidelity_bonds_total": sum(int(item["fidelity_bonds"]) for item in results),
-        "makers_total": sum(int(item["makers"]) for item in results),
+        "makers_total": makers_unique_total,
+        "makers_unique_total": makers_unique_total,
+        "makers_reported_total": makers_reported_total,
     }
 
 
@@ -95,9 +105,7 @@ def run_probe(settings: Settings) -> dict:
             results.append(future.result())
     results.sort(key=lambda item: item["node"])
     orderbook = build_aggregated_orderbook(results)
-    summary = build_summary(results)
-    summary["offers_unique_total"] = orderbook["offers_total"]
-    summary["makers_unique_total"] = orderbook["makers_total"]
+    summary = build_summary(results, orderbook)
     latest = {
         "checked_at": checked_at,
         "network": settings.jm_network,
@@ -111,6 +119,7 @@ def run_probe(settings: Settings) -> dict:
         settings.data_dir,
         latest,
         settings.max_history_samples,
+        settings.history_retention_days,
     )
     return latest
 
@@ -121,6 +130,7 @@ def command_run_once(args: argparse.Namespace) -> int:
     print(f"checked_at={latest['checked_at']}")
     print(
         "nodes_ok={nodes_ok}/{nodes_total} offers_total={offers_total} "
+        "offers_reported_total={offers_reported_total} "
         "fidelity_bonds_total={fidelity_bonds_total}".format(**latest["summary"])
     )
     if args.publish or settings.publish_enabled:
@@ -136,7 +146,10 @@ def command_daemon(args: argparse.Namespace) -> int:
         try:
             latest = run_probe(settings)
             print(
-                "{checked_at} nodes_ok={nodes_ok}/{nodes_total} offers={offers_total}".format(
+                (
+                    "{checked_at} nodes_ok={nodes_ok}/{nodes_total} "
+                    "offers={offers_total} offers_reported={offers_reported_total}"
+                ).format(
                     checked_at=latest["checked_at"],
                     **latest["summary"],
                 ),

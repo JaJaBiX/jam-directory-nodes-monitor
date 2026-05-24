@@ -2,10 +2,18 @@ const latestUrl = "data/latest.json";
 const historyUrl = "data/history.json";
 const ABS_OFFER_TYPES = new Set(["absoffer", "swabsoffer", "sw0absoffer"]);
 const REL_OFFER_TYPES = new Set(["reloffer", "swreloffer", "sw0reloffer"]);
+const ALL_NODES_VALUE = "__all__";
+const WINDOW_DURATION_MS = {
+  "6h": 6 * 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
 
 const state = {
   latest: null,
   history: [],
+  chartScaleFactor: 1,
 };
 
 function formatNumber(value) {
@@ -26,7 +34,24 @@ function formatDate(value) {
   if (!value) {
     return "No checks yet";
   }
-  return new Date(value).toLocaleString();
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "No checks yet";
+  }
+  return date.toLocaleString();
+}
+
+function formatShortDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return date.toLocaleString([], {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function formatPercent(value, digits = 4) {
@@ -41,6 +66,19 @@ function formatFraction(value) {
     return "-";
   }
   return Number(value).toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatMetricValue(metric, value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  if (metric === "latency_ms") {
+    return `${formatNumber(Math.round(value))} ms`;
+  }
+  if (metric === "online") {
+    return formatNumber(Math.round(value));
+  }
+  return formatNumber(Math.round(value));
 }
 
 function parseBtcToSats(input) {
@@ -74,6 +112,18 @@ function parseOfferNumber(value) {
     return null;
   }
   return parsed;
+}
+
+function parseChartOffset(input) {
+  const parsed = Number(input);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function calculateOfferFeeSats(offer, amountSats) {
@@ -187,99 +237,234 @@ function calculateFeeProfiles(bestOffers, amountSats, counterparties) {
   });
 }
 
-function groupHistory(rows, metric) {
-  const grouped = new Map();
-  for (const row of rows) {
-    const key = row.checked_at;
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        checked_at: key,
-        value: 0,
-        count: 0,
-      });
-    }
-    const item = grouped.get(key);
-    if (metric === "latency_ms") {
-      if (row.ok && row.latency_ms !== null && row.latency_ms !== undefined) {
-        item.value += Number(row.latency_ms);
-        item.count += 1;
-      }
-    } else if (row.ok) {
-      item.value += Number(row[metric] || 0);
-      item.count += 1;
+function toFiniteNumber(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function sumFinite(values) {
+  let total = 0;
+  for (const value of values) {
+    const parsed = toFiniteNumber(value);
+    if (parsed !== null) {
+      total += parsed;
     }
   }
-  return Array.from(grouped.values())
-    .map((item) => ({
-      checked_at: item.checked_at,
-      value:
-        metric === "latency_ms" && item.count > 0
-          ? Math.round(item.value / item.count)
-          : item.value,
-    }))
-    .sort((a, b) => new Date(a.checked_at) - new Date(b.checked_at));
+  return total;
+}
+
+function firstFinite(values) {
+  for (const value of values) {
+    const parsed = toFiniteNumber(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function metricFromAllNodes(rows, metric) {
+  if (metric === "offers") {
+    const unique = firstFinite(rows.map((row) => row.offers_unique_total));
+    return unique !== null ? unique : sumFinite(rows.map((row) => row.offers));
+  }
+  if (metric === "makers") {
+    const unique = firstFinite(rows.map((row) => row.makers_unique_total));
+    return unique !== null ? unique : sumFinite(rows.map((row) => row.makers));
+  }
+  if (metric === "fidelity_bonds") {
+    return sumFinite(rows.map((row) => row.fidelity_bonds));
+  }
+  if (metric === "online") {
+    return rows.filter((row) => row.ok).length;
+  }
+  if (metric === "latency_ms") {
+    const samples = rows
+      .filter((row) => row.ok)
+      .map((row) => toFiniteNumber(row.latency_ms))
+      .filter((value) => value !== null);
+    if (samples.length === 0) {
+      return null;
+    }
+    return samples.reduce((acc, value) => acc + value, 0) / samples.length;
+  }
+  return null;
+}
+
+function metricFromNode(rows, metric, node) {
+  const row = rows.find((item) => item.node === node);
+  if (!row) {
+    return null;
+  }
+  if (metric === "offers") {
+    return toFiniteNumber(row.offers) ?? 0;
+  }
+  if (metric === "makers") {
+    return toFiniteNumber(row.makers) ?? 0;
+  }
+  if (metric === "fidelity_bonds") {
+    return toFiniteNumber(row.fidelity_bonds) ?? 0;
+  }
+  if (metric === "online") {
+    return row.ok ? 1 : 0;
+  }
+  if (metric === "latency_ms") {
+    if (!row.ok) {
+      return null;
+    }
+    return toFiniteNumber(row.latency_ms);
+  }
+  return null;
+}
+
+function buildHistorySeries(rows, metric, selectedNode) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const checkedAt = String(row?.checked_at || "").trim();
+    if (!checkedAt) {
+      continue;
+    }
+    if (!grouped.has(checkedAt)) {
+      grouped.set(checkedAt, []);
+    }
+    grouped.get(checkedAt).push(row);
+  }
+
+  const series = [];
+  for (const [checkedAt, items] of grouped.entries()) {
+    const timestamp = Date.parse(checkedAt);
+    if (!Number.isFinite(timestamp)) {
+      continue;
+    }
+    const value =
+      selectedNode === ALL_NODES_VALUE
+        ? metricFromAllNodes(items, metric)
+        : metricFromNode(items, metric, selectedNode);
+    if (value === null) {
+      continue;
+    }
+    series.push({
+      checked_at: checkedAt,
+      timestamp,
+      value,
+    });
+  }
+  return series.sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function sliceSeriesWindow(series, windowMs, offset) {
+  if (series.length === 0) {
+    return [];
+  }
+  const safeOffset = clamp(offset, 0, Math.max(0, series.length - 1));
+  const endIndex = series.length - 1 - safeOffset;
+  if (endIndex < 0) {
+    return [];
+  }
+  const endTimestamp = series[endIndex].timestamp;
+  const startTimestamp = endTimestamp - windowMs;
+  return series.filter(
+    (item, index) => index <= endIndex && item.timestamp >= startTimestamp,
+  );
+}
+
+function setupCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(320, Math.floor(rect.width));
+  const height = Math.max(220, Math.floor(rect.height));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, width, height };
 }
 
 function drawChart(rows, metric) {
   const canvas = document.getElementById("history-chart");
-  const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-  ctx.clearRect(0, 0, width, height);
-
-  const padding = { top: 24, right: 22, bottom: 34, left: 54 };
+  const { ctx, width, height } = setupCanvas(canvas);
+  const padding = { top: 24, right: 20, bottom: 38, left: 74 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
+  ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#fbfcfd";
   ctx.fillRect(0, 0, width, height);
+
+  if (rows.length === 0) {
+    ctx.fillStyle = "#63707c";
+    ctx.font = "16px system-ui, sans-serif";
+    ctx.fillText("No history in selected window", padding.left, padding.top + 42);
+    return;
+  }
+
+  const values = rows.map((item) => item.value);
+  const maxValue = Math.max(1, ...values);
+  const scaledMax = Math.max(1, maxValue * state.chartScaleFactor);
+  const yTicks = 5;
+
   ctx.strokeStyle = "#d8dee4";
   ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i += 1) {
-    const y = padding.top + (chartHeight / 4) * i;
+  ctx.fillStyle = "#63707c";
+  ctx.font = "12px system-ui, sans-serif";
+  for (let i = 0; i <= yTicks; i += 1) {
+    const ratio = i / yTicks;
+    const y = padding.top + chartHeight * ratio;
     ctx.beginPath();
     ctx.moveTo(padding.left, y);
     ctx.lineTo(width - padding.right, y);
     ctx.stroke();
+    const value = Math.round((1 - ratio) * scaledMax);
+    const label = metric === "latency_ms" ? `${formatNumber(value)} ms` : formatNumber(value);
+    const labelWidth = ctx.measureText(label).width;
+    ctx.fillText(label, padding.left - labelWidth - 8, y + 4);
   }
 
-  if (rows.length === 0) {
-    ctx.fillStyle = "#63707c";
-    ctx.font = "18px system-ui, sans-serif";
-    ctx.fillText("No history yet", padding.left, padding.top + 42);
-    return;
-  }
-
-  const maxValue = Math.max(1, ...rows.map((item) => item.value));
   const stepX = rows.length > 1 ? chartWidth / (rows.length - 1) : chartWidth;
+  const points = rows.map((item, index) => ({
+    x: padding.left + stepX * index,
+    y: padding.top + chartHeight - (item.value / scaledMax) * chartHeight,
+  }));
 
   ctx.strokeStyle = "#1d6f8f";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2.4;
   ctx.beginPath();
-  rows.forEach((item, index) => {
-    const x = padding.left + stepX * index;
-    const y = padding.top + chartHeight - (item.value / maxValue) * chartHeight;
+  points.forEach((point, index) => {
     if (index === 0) {
-      ctx.moveTo(x, y);
+      ctx.moveTo(point.x, point.y);
     } else {
-      ctx.lineTo(x, y);
+      ctx.lineTo(point.x, point.y);
     }
   });
   ctx.stroke();
 
-  ctx.fillStyle = "#17212b";
-  ctx.font = "15px system-ui, sans-serif";
-  ctx.fillText(formatNumber(maxValue), 12, padding.top + 5);
-  ctx.fillText("0", 32, height - padding.bottom + 5);
+  ctx.fillStyle = "#1d6f8f";
+  for (const point of points) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-  const first = rows[0]?.checked_at;
-  const last = rows[rows.length - 1]?.checked_at;
+  const tickCount = Math.min(6, rows.length);
   ctx.fillStyle = "#63707c";
-  ctx.font = "13px system-ui, sans-serif";
-  ctx.fillText(formatDate(first), padding.left, height - 10);
-  const lastText = formatDate(last);
-  const lastWidth = ctx.measureText(lastText).width;
-  ctx.fillText(lastText, width - padding.right - lastWidth, height - 10);
+  ctx.font = "12px system-ui, sans-serif";
+  for (let i = 0; i < tickCount; i += 1) {
+    const index =
+      tickCount === 1 ? 0 : Math.round(((rows.length - 1) * i) / (tickCount - 1));
+    const row = rows[index];
+    const x = padding.left + stepX * index;
+    const text = formatShortDate(row.checked_at);
+    const textWidth = ctx.measureText(text).width;
+    const centeredX = clamp(
+      x - textWidth / 2,
+      padding.left,
+      width - padding.right - textWidth,
+    );
+    ctx.fillText(text, centeredX, height - 12);
+  }
 }
 
 function renderLatest(latest) {
@@ -292,7 +477,7 @@ function renderLatest(latest) {
       ? `${formatNumber(summary.nodes_ok)}/${formatNumber(summary.nodes_total)}`
       : "-";
   document.getElementById("offers-total").textContent = formatNumber(
-    summary.offers_total,
+    summary.offers_unique_total ?? summary.offers_total,
   );
   document.getElementById("max-node-offers").textContent = formatNumber(
     summary.max_node_offers,
@@ -402,11 +587,108 @@ function renderFeeCalculator() {
   );
 }
 
+function collectKnownNodes() {
+  const nodes = new Set();
+  for (const node of state.latest?.nodes || []) {
+    if (node?.node) {
+      nodes.add(node.node);
+    }
+  }
+  for (const row of state.history) {
+    if (row?.node) {
+      nodes.add(row.node);
+    }
+  }
+  return Array.from(nodes).sort((left, right) => left.localeCompare(right));
+}
+
+function syncChartNodeOptions() {
+  const select = document.getElementById("chart-node");
+  const previousValue = select.value || ALL_NODES_VALUE;
+  const nodes = collectKnownNodes();
+  const options = [
+    { value: ALL_NODES_VALUE, label: "All DN" },
+    ...nodes.map((node) => ({ value: node, label: node })),
+  ];
+  select.replaceChildren(
+    ...options.map((option) => {
+      const element = document.createElement("option");
+      element.value = option.value;
+      element.textContent = option.label;
+      return element;
+    }),
+  );
+  const nextValue = options.some((option) => option.value === previousValue)
+    ? previousValue
+    : ALL_NODES_VALUE;
+  select.value = nextValue;
+}
+
+function getSelectedWindowMs() {
+  const selected = document.getElementById("chart-window").value;
+  return WINDOW_DURATION_MS[selected] || WINDOW_DURATION_MS["24h"];
+}
+
+function updateOffsetControl(totalPoints) {
+  const control = document.getElementById("chart-offset");
+  const maxOffset = Math.max(0, totalPoints - 1);
+  control.max = String(maxOffset);
+  const current = clamp(parseChartOffset(control.value), 0, maxOffset);
+  control.value = String(current);
+  const caption = document.getElementById("chart-offset-caption");
+  caption.textContent =
+    current === 0
+      ? "Newest window"
+      : `Window shifted by ${formatNumber(current)} samples`;
+  return current;
+}
+
+function renderChartSummary(rows, metric, selectedNode, offset, totalPoints) {
+  const summary = document.getElementById("chart-summary");
+  if (rows.length === 0) {
+    summary.textContent = "No history in selected scope and window.";
+    return;
+  }
+  const values = rows.map((item) => item.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const avg = values.reduce((acc, value) => acc + value, 0) / values.length;
+  const last = values[values.length - 1];
+  const firstTime = formatDate(rows[0].checked_at);
+  const lastTime = formatDate(rows[rows.length - 1].checked_at);
+  const scopeLabel = selectedNode === ALL_NODES_VALUE ? "All DN" : selectedNode;
+  const scaleLabel =
+    state.chartScaleFactor === 1
+      ? "auto"
+      : `${Math.round(state.chartScaleFactor * 100)}%`;
+  summary.textContent =
+    `${scopeLabel}. ` +
+    `Points: ${formatNumber(rows.length)} of ${formatNumber(totalPoints)}. ` +
+    `Range: ${firstTime} -> ${lastTime}. ` +
+    `Last ${formatMetricValue(metric, last)}, ` +
+    `Avg ${formatMetricValue(metric, avg)}, ` +
+    `Min ${formatMetricValue(metric, min)}, ` +
+    `Max ${formatMetricValue(metric, max)}. ` +
+    `Scale: ${scaleLabel}. ` +
+    `Offset: ${formatNumber(offset)}.`;
+}
+
+function renderChart() {
+  syncChartNodeOptions();
+  const metric = document.getElementById("chart-mode").value;
+  const selectedNode = document.getElementById("chart-node").value || ALL_NODES_VALUE;
+  const windowMs = getSelectedWindowMs();
+  const series = buildHistorySeries(state.history, metric, selectedNode);
+  const offset = updateOffsetControl(series.length);
+  const rows = sliceSeriesWindow(series, windowMs, offset);
+  drawChart(rows, metric);
+  renderChartSummary(rows, metric, selectedNode, offset, series.length);
+}
+
 function render() {
   renderLatest(state.latest);
   renderFeeCalculator();
-  const metric = document.getElementById("chart-mode").value;
-  drawChart(groupHistory(state.history, metric), metric);
+  renderChart();
 }
 
 async function fetchJson(url, fallback) {
@@ -427,14 +709,34 @@ async function loadData() {
   render();
 }
 
+function resetOffsetAndRender() {
+  document.getElementById("chart-offset").value = "0";
+  renderChart();
+}
+
 document.getElementById("refresh-button").addEventListener("click", loadData);
-document.getElementById("chart-mode").addEventListener("change", render);
+document.getElementById("chart-mode").addEventListener("change", resetOffsetAndRender);
+document.getElementById("chart-node").addEventListener("change", resetOffsetAndRender);
+document.getElementById("chart-window").addEventListener("change", resetOffsetAndRender);
+document.getElementById("chart-offset").addEventListener("input", renderChart);
+document.getElementById("chart-zoom-in").addEventListener("click", () => {
+  state.chartScaleFactor = clamp(state.chartScaleFactor / 1.4, 0.25, 8);
+  renderChart();
+});
+document.getElementById("chart-zoom-out").addEventListener("click", () => {
+  state.chartScaleFactor = clamp(state.chartScaleFactor * 1.4, 0.25, 8);
+  renderChart();
+});
+document.getElementById("chart-zoom-reset").addEventListener("click", () => {
+  state.chartScaleFactor = 1;
+  renderChart();
+});
 document.getElementById("fee-calc").addEventListener("click", renderFeeCalculator);
 document.getElementById("fee-amount").addEventListener("change", renderFeeCalculator);
 document
   .getElementById("fee-counterparties")
   .addEventListener("change", renderFeeCalculator);
-window.addEventListener("resize", render);
+window.addEventListener("resize", renderChart);
 loadData().catch((error) => {
   document.getElementById("subtitle").textContent = `Load failed: ${error.message}`;
 });

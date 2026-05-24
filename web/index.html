@@ -24,7 +24,7 @@
           <strong id="nodes-ok">-</strong>
         </article>
         <article>
-          <span>Offer sum</span>
+          <span>Offers unique</span>
           <strong id="offers-total">-</strong>
         </article>
         <article>
@@ -80,15 +80,53 @@
       </section>
 
       <section class="panel">
-        <div class="panel-header">
-          <h2>Published offers</h2>
-          <select id="chart-mode" aria-label="Chart metric">
-            <option value="offers">Offers</option>
-            <option value="makers">Makers</option>
-            <option value="latency_ms">Latency</option>
-          </select>
+        <div class="panel-header chart-header">
+          <h2>History</h2>
+          <div class="chart-controls">
+            <label class="chart-control">
+              <span>Metric</span>
+              <select id="chart-mode" aria-label="Chart metric">
+                <option value="offers">Offers</option>
+                <option value="makers">Makers</option>
+                <option value="latency_ms">Latency</option>
+                <option value="online">Online DN</option>
+                <option value="fidelity_bonds">Fidelity bonds</option>
+              </select>
+            </label>
+            <label class="chart-control">
+              <span>Scope</span>
+              <select id="chart-node" aria-label="Chart node">
+                <option value="__all__">All DN</option>
+              </select>
+            </label>
+            <label class="chart-control">
+              <span>Window</span>
+              <select id="chart-window" aria-label="Chart window">
+                <option value="6h">6h</option>
+                <option value="24h" selected>24h</option>
+                <option value="7d">7d</option>
+                <option value="30d">30d</option>
+              </select>
+            </label>
+            <div class="chart-zoom" role="group" aria-label="Y scale controls">
+              <button id="chart-zoom-out" type="button" aria-label="Decrease scale">
+                Scale -
+              </button>
+              <button id="chart-zoom-reset" type="button" aria-label="Reset scale">
+                Auto
+              </button>
+              <button id="chart-zoom-in" type="button" aria-label="Increase scale">
+                Scale +
+              </button>
+            </div>
+          </div>
         </div>
         <canvas id="history-chart" width="1120" height="360"></canvas>
+        <label class="chart-offset">
+          <span id="chart-offset-caption">Newest window</span>
+          <input id="chart-offset" type="range" min="0" max="0" value="0" step="1">
+        </label>
+        <p id="chart-summary" class="chart-summary">No history yet.</p>
       </section>
 
       <section class="panel">

@@ -1,6 +1,6 @@
 import unittest
 
-from monitor.__main__ import build_aggregated_orderbook, strip_node_orderbook
+from monitor.__main__ import build_aggregated_orderbook, build_summary, strip_node_orderbook
 
 
 class MainModuleTest(unittest.TestCase):
@@ -9,6 +9,9 @@ class MainModuleTest(unittest.TestCase):
             {
                 "node": "a.onion:5222",
                 "ok": True,
+                "offers": 2,
+                "makers": 2,
+                "fidelity_bonds": 1,
                 "orderbook_offers": [
                     {
                         "counterparty": "J5makerA",
@@ -33,6 +36,9 @@ class MainModuleTest(unittest.TestCase):
             {
                 "node": "b.onion:5222",
                 "ok": True,
+                "offers": 2,
+                "makers": 2,
+                "fidelity_bonds": 1,
                 "orderbook_offers": [
                     {
                         "counterparty": "J5makerA",
@@ -57,6 +63,9 @@ class MainModuleTest(unittest.TestCase):
             {
                 "node": "c.onion:5222",
                 "ok": False,
+                "offers": 1,
+                "makers": 1,
+                "fidelity_bonds": 0,
                 "orderbook_offers": [
                     {
                         "counterparty": "J5makerD",
@@ -72,9 +81,16 @@ class MainModuleTest(unittest.TestCase):
         ]
 
         aggregated = build_aggregated_orderbook(results)
+        summary = build_summary(results, aggregated)
 
         self.assertEqual(aggregated["offers_total"], 3)
         self.assertEqual(aggregated["makers_total"], 3)
+        self.assertEqual(summary["offers_total"], 3)
+        self.assertEqual(summary["offers_unique_total"], 3)
+        self.assertEqual(summary["offers_reported_total"], 5)
+        self.assertEqual(summary["makers_total"], 3)
+        self.assertEqual(summary["makers_unique_total"], 3)
+        self.assertEqual(summary["makers_reported_total"], 5)
         self.assertEqual(
             [offer["counterparty"] for offer in aggregated["offers"]],
             ["J5makerA", "J5makerB", "J5makerC"],

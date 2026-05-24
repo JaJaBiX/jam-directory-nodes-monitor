@@ -20,6 +20,7 @@ class Settings:
     probe_timeout_seconds: int
     orderbook_collect_seconds: int
     max_history_samples: int
+    history_retention_days: int
     data_dir: Path
     web_dir: Path
     publish_enabled: bool
@@ -73,7 +74,11 @@ def load_settings(nodes_file: str | None = None) -> Settings:
         poll_interval_seconds=int(os.environ.get("POLL_INTERVAL_SECONDS", "300")),
         probe_timeout_seconds=int(os.environ.get("PROBE_TIMEOUT_SECONDS", "90")),
         orderbook_collect_seconds=int(os.environ.get("ORDERBOOK_COLLECT_SECONDS", "30")),
-        max_history_samples=int(os.environ.get("MAX_HISTORY_SAMPLES", "2016")),
+        max_history_samples=int(os.environ.get("MAX_HISTORY_SAMPLES", "0")),
+        history_retention_days=max(
+            1,
+            min(30, int(os.environ.get("HISTORY_RETENTION_DAYS", "30"))),
+        ),
         data_dir=Path(os.environ.get("MONITOR_DATA_DIR", str(DEFAULT_DATA_DIR))),
         web_dir=Path(os.environ.get("MONITOR_WEB_DIR", str(DEFAULT_WEB_DIR))),
         publish_enabled=parse_bool(os.environ.get("PUBLISH_ENABLED")),

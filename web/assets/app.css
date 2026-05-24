@@ -172,6 +172,40 @@ select {
   margin-bottom: 14px;
 }
 
+.chart-header {
+  align-items: flex-end;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.chart-control {
+  display: grid;
+  gap: 5px;
+  min-width: 118px;
+}
+
+.chart-control span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.chart-zoom {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.chart-zoom button {
+  min-width: 72px;
+  padding: 0 10px;
+}
+
 canvas {
   display: block;
   width: 100%;
@@ -179,6 +213,27 @@ canvas {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: linear-gradient(180deg, #fbfcfd 0%, #f7faf9 100%);
+}
+
+.chart-offset {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chart-offset span,
+.chart-summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.chart-offset input {
+  width: 100%;
+  height: auto;
+}
+
+.chart-summary {
+  margin-top: 10px;
 }
 
 .table-wrap {
@@ -273,5 +328,21 @@ td {
   .panel-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .chart-controls {
+    justify-content: stretch;
+  }
+
+  .chart-control {
+    min-width: 100%;
+  }
+
+  .chart-zoom {
+    width: 100%;
+  }
+
+  .chart-zoom button {
+    flex: 1;
   }
 }

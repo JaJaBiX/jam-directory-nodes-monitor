@@ -24,6 +24,11 @@ protocol:
 The container defaults to `network_mode: host`, so it can use Tor already
 running on the deployment host at `127.0.0.1:9050`.
 
+History retention is time-bounded:
+
+- `HISTORY_RETENTION_DAYS` keeps at most the most recent N days (capped at 30);
+- `MAX_HISTORY_SAMPLES` can additionally cap stored rows (set `0` to disable).
+
 ```bash
 cp .env.example .env
 docker compose up -d --build
@@ -64,11 +69,14 @@ container can use existing GitHub authentication.
 ## JSON Outputs
 
 - `web/data/latest.json` contains the latest run, per-node results, and summary.
+- `summary.offers_total` is the unique deduplicated offer count across all DNs
+  (same value as `summary.offers_unique_total`).
 - `web/data/latest.json` also includes an aggregated deduplicated orderbook
   (`orderbook.offers`) merged from the latest successful node probes. The web
   UI uses this list to run a fee-limit calculator for user-entered transaction
   amounts.
-- `web/data/history.json` contains bounded historical samples for charting.
+- `web/data/history.json` contains per-node samples with retained history
+  limited to the latest 30 days.
 - `data/probes.jsonl` contains append-only runtime logs inside the container
   data volume.
 
