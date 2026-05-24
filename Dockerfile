@@ -4,6 +4,8 @@ ENV MONITOR_DATA_DIR=/app/data \
     MONITOR_WEB_DIR=/app/web \
     PYTHONUNBUFFERED=1
 
+LABEL org.opencontainers.image.source="https://github.com/JaJaBiX/jam-directory-nodes-monitor"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates \

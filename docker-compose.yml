@@ -2,7 +2,7 @@ services:
   monitor:
     build:
       context: .
-    image: ${MONITOR_IMAGE:-jm-directory-nodes-monitor:latest}
+    image: ${MONITOR_IMAGE:-ghcr.io/jajabix/jam-directory-nodes-monitor:latest}
     restart: unless-stopped
     network_mode: host
     environment:

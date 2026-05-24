@@ -35,6 +35,11 @@ Run one local probe without publishing:
 python3 -m monitor run-once --nodes-file config/nodes.example.json
 ```
 
+The canonical image is published to GHCR as
+`ghcr.io/jajabix/jam-directory-nodes-monitor:latest` by GitHub Actions.
+Set `MONITOR_IMAGE` to pin a specific tag when needed.
+The workflow definition lives at `.github/workflows/build-image.yml`.
+
 ## Publication
 
 Generated output is written to `web/data/` and then copied to a temporary
