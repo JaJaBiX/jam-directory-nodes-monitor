@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JoinMarket Directory Nodes</title>
+    <link rel="stylesheet" href="assets/app.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>JoinMarket Directory Nodes</h1>
+          <p id="subtitle">Waiting for monitor data</p>
+        </div>
+        <button id="refresh-button" type="button" aria-label="Refresh data">
+          Refresh
+        </button>
+      </header>
+
+      <section class="metrics" aria-label="Current summary">
+        <article>
+          <span>Online</span>
+          <strong id="nodes-ok">-</strong>
+        </article>
+        <article>
+          <span>Offers unique</span>
+          <strong id="offers-total">-</strong>
+        </article>
+        <article>
+          <span>Largest node</span>
+          <strong id="max-node-offers">-</strong>
+        </article>
+        <article>
+          <span>Maker sum</span>
+          <strong id="makers-total">-</strong>
+        </article>
+        <article>
+          <span>Fidelity bonds</span>
+          <strong id="bonds-total">-</strong>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Fee Calculator</h2>
+          <span id="fee-source">Waiting for orderbook data</span>
+        </div>
+        <div class="fee-controls">
+          <label>
+            <span>Amount (BTC)</span>
+            <input id="fee-amount" type="text" value="0.00060150">
+          </label>
+          <label>
+            <span>Counterparties</span>
+            <input id="fee-counterparties" type="number" min="1" max="20" value="5">
+          </label>
+          <button id="fee-calc" type="button">Calculate</button>
+        </div>
+        <p id="fee-status" class="fee-status">Enter amount and calculate recommendations.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Profile</th>
+                <th>Abs limit (sat)</th>
+                <th>Rel limit (%)</th>
+                <th>Rel limit (fraction)</th>
+                <th>Eligible makers</th>
+                <th>Target pool</th>
+              </tr>
+            </thead>
+            <tbody id="fee-table">
+              <tr>
+                <td colspan="6">No calculation yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header chart-header">
+          <h2>History</h2>
+          <div class="chart-controls">
+            <label class="chart-control">
+              <span>Metric</span>
+              <select id="chart-mode" aria-label="Chart metric">
+                <option value="offers">Offers</option>
+                <option value="makers">Makers</option>
+                <option value="latency_ms">Latency</option>
+                <option value="online">Online DN</option>
+                <option value="fidelity_bonds">Fidelity bonds</option>
+              </select>
+            </label>
+            <label class="chart-control">
+              <span>Scope</span>
+              <select id="chart-node" aria-label="Chart node">
+                <option value="__all__">All DN</option>
+              </select>
+            </label>
+            <label class="chart-control">
+              <span>Window</span>
+              <select id="chart-window" aria-label="Chart window">
+                <option value="6h">6h</option>
+                <option value="24h" selected>24h</option>
+                <option value="7d">7d</option>
+                <option value="30d">30d</option>
+              </select>
+            </label>
+            <div class="chart-zoom" role="group" aria-label="Y scale controls">
+              <button id="chart-zoom-out" type="button" aria-label="Decrease scale">
+                Scale -
+              </button>
+              <button id="chart-zoom-reset" type="button" aria-label="Reset scale">
+                Auto
+              </button>
+              <button id="chart-zoom-in" type="button" aria-label="Increase scale">
+                Scale +
+              </button>
+            </div>
+          </div>
+        </div>
+        <canvas id="history-chart" width="1120" height="360"></canvas>
+        <label class="chart-offset">
+          <span id="chart-offset-caption">Newest window</span>
+          <input id="chart-offset" type="range" min="0" max="0" value="0" step="1">
+        </label>
+        <p id="chart-summary" class="chart-summary">No history yet.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Directory nodes</h2>
+          <span id="last-check">No checks yet</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>Status</th>
+                <th>Offers</th>
+                <th>Makers</th>
+                <th>Fidelity bonds</th>
+                <th>Latency</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody id="nodes-table">
+              <tr>
+                <td colspan="7">No data published yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="assets/app.js"></script>
+  </body>
+</html>
